@@ -1,0 +1,26 @@
+digraph "pylintgraph" {
+rankdir=LR
+charset="utf-8"
+URL="." node[shape="box"]
+"docutils.nodes" [];
+"sphinxcontrib.sqlalchemy-uml" [];
+"docutils.parsers.rst" [];
+"docutils.parsers.rst.directives" [];
+"pbr.version" [];
+"sphinx.application" [];
+"sphinx.errors" [];
+"sphinx.ext.graphviz" [];
+"sphinx.util.osutil" [];
+"sphinxcontrib.sqlalchemy-uml.sagraph" [];
+"sqlalchemy" [];
+"sphinxcontrib.sqlalchemy-uml" -> "docutils.nodes" [];
+"sphinxcontrib.sqlalchemy-uml" -> "docutils.parsers.rst" [];
+"sphinxcontrib.sqlalchemy-uml" -> "docutils.parsers.rst.directives" [];
+"sphinxcontrib.sqlalchemy-uml" -> "pbr.version" [];
+"sphinxcontrib.sqlalchemy-uml" -> "sphinx.application" [];
+"sphinxcontrib.sqlalchemy-uml" -> "sphinx.errors" [];
+"sphinxcontrib.sqlalchemy-uml" -> "sphinx.ext.graphviz" [];
+"sphinxcontrib.sqlalchemy-uml" -> "sphinx.util.osutil" [];
+"sphinxcontrib.sqlalchemy-uml" -> "sphinxcontrib.sqlalchemy-uml.sagraph" [];
+"sphinxcontrib.sqlalchemy-uml.sagraph" -> "sqlalchemy" [];
+}
