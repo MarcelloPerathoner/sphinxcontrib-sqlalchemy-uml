@@ -75,6 +75,7 @@ def inspect_urls (args):
 
     for url in args.urls:
         engine = sqlalchemy.create_engine (get_pg_pass (url))
+
         meta = sqlalchemy.MetaData ()
         meta.reflect (bind = engine, schema = args.schema)
 
@@ -284,7 +285,7 @@ def format_as_dot (data, args, **kw):
 
     def setdefault_html (kw, key, defaults):
         d = kw[key]
-        for k, v in d:
+        for k, v in d.items ():
             defaults[k.upper ()] = '"%s"' % v.strip ('"')
         kw[key] = defaults
 

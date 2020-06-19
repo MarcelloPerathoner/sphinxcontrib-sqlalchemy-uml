@@ -7,8 +7,8 @@
     Inspect an SQLAlchemy model or database and generate an UML graph to be included
     in Sphinx-generated documents.
 
-    The UML graph is generated in graphviz .dot format and then passed to the sphinx
-    graphviz directive.
+    The UML graph is generated in graphviz .dot format and then passed to the
+    sphinxcontrib-pic directive.
 
     Inspect an SQLAlchemy model in one or more Python modules::
 
@@ -26,9 +26,11 @@
     :file:`~/.pgpass` in the same way as you would for Postgres databases.
 
     To avoid having to repeat the same urls for every diagram default urls can
-    be set (as list) in the conf.py directive: sauml_arguments::
+    be set (as list) in the conf.py directive: sauml_option['arguments']::
 
-        sauml_arguments = [postgresql+psycopg2://user@localhost:5432/database, url2, ...]
+        sauml_options = {
+            'arguments' : ['postgresql+psycopg2://user@localhost:5432/database', 'url2', ...],
+        }
 
     :param string include: Whitespace-separated list of tables to include.  Use
                            either include or exclude, not both.  If none is
@@ -42,7 +44,7 @@
 
     :param bool include-indices: Include database indices.
 
-    All parameters of the graphviz directive (alt, align, caption, ...) are also
+    All parameters of the sphinxcontrib-pic directive (alt, align, caption, ...) are also
     supported.
 
     Parameters that will be passed verbatim to the graphviz .dot file (all
@@ -54,16 +56,18 @@
     :param string dot-table: Parameters for tables, eg. :code:`bgcolor=#e7f2fa&color=#41799e`
     :param string dot-td: Parameters for table cells
 
-    Defaults for these parameters can be set in the conf.py directives:
-    sauml_dot_graph, sauml_dot_node, sauml_dot_edge, sauml_dot_table, and
-    sauml_dot_td::
+    Defaults for these parameters can be set in the conf.py directive sauml_options,
+    keys: dot-graph, dot-node, dot-edge, dot-table, and dot-td::
 
-       sauml_dot_graph = 'bgcolor=transparent'
-       sauml_dot_node  = 'margin=0.5'
-       sauml_dot_table = 'bgcolor=#e7f2fa&color=#2980B9'
+       sauml_options = {
+          'dot_graph' : { 'bgcolor' : 'transparent' },
+          'dot_node'  : { 'margin'  : '0.5' },
+          'dot_table' : { 'bgcolor' : '#e7f2fa', 'color' : '#2980B9' },
+       }
 
     :copyright: Copyright 2019 by Marcello Perathoner <marcello@perathoner.de>
     :license: BSD, see LICENSE for details.
+
 """
 
 import sys
@@ -72,16 +76,20 @@ import types
 import urllib.parse
 
 from docutils import nodes
-from docutils.parsers.rst import directives, Directive
-from sphinx.errors import SphinxWarning, SphinxError, ExtensionError
+from docutils.parsers.rst import directives
+from sphinx.errors import SphinxWarning, ExtensionError
 from sphinx.util.osutil import ensuredir, ENOENT
-from sphinx.ext import graphviz
+from sphinx.util.docutils import SphinxDirective
+from sphinx.util.logging import getLogger
+
+import pic
 
 import pbr.version
 
 from . import sagraph
 
 NAME = 'sauml'
+logger = getLogger (__name__)
 
 if False:
     # For type annotations
@@ -91,85 +99,65 @@ if False:
 __version__ = pbr.version.VersionInfo ('sqlalchemy-uml').version_string ()
 
 
-def setup (app):
-    # type: (Sphinx) -> Dict[unicode, Any]
-
-    app.add_config_value (NAME + '_arguments', [], False)
-
-    for attr in sagraph.DOT_ATTRS:
-        app.add_config_value (NAME + '_dot_' + attr, '', False)
-
-    app.add_directive (NAME, SaUmlDirective)
-
-    app.add_node (
-        SaUmlNode,
-        html    = (html_visit_graphviz, None),
-        latex   = (graphviz.latex_visit_graphviz, None),
-        texinfo = (graphviz.texinfo_visit_graphviz, None),
-        text    = (graphviz.text_visit_graphviz, None),
-        man     = (graphviz.man_visit_graphviz, None)
-    )
-
-    return {'version': __version__, 'parallel_read_safe': True}
+class SaUmlError (ExtensionError):
+    category = 'SQLAlchemy-UML error'
 
 
-class SaUmlError (SphinxError):
-    category = NAME + ' error'
-
-
-class SaUmlNode (graphviz.graphviz):
-    pass
-
-
-class SaUmlDirective (graphviz.Graphviz):
-    """Directive to display SQLAlchemy Uml Models"""
+class SaUmlDirective (pic.PicDirective):
+    """Directive to display SQLAlchemy UML Models"""
 
     required_arguments = 0
     optional_arguments = 999
     has_content = True
 
-    option_spec = graphviz.Graphviz.option_spec.copy ()
-    del option_spec['graphviz_dot']
-    option_spec.update ({
+    name = NAME
+
+    option_spec = {
         'schema'          : directives.unchanged,
         'exclude'         : directives.unchanged,
         'include'         : directives.unchanged,
         'include-fields'  : directives.unchanged,
         'include-indices' : directives.flag,
-    })
+    }
     for attr in sagraph.DOT_ATTRS:
         option_spec['dot-' + attr] = directives.unchanged
 
+    option_spec.update (pic.PicDirective.base_option_spec)
 
-    def run (self):
-        node = SaUmlNode ()
-        env = self.state.document.settings.env
+    def get_opt (self, name, default = None, required = False, parse = False):
+        options = getattr (self.env.config, self.name + '_options')
+
+        if parse:
+            opt = dict (options.get (name) or {})
+            opt.update (urllib.parse.parse_qsl (self.options.get (name) or ''))
+        else:
+            opt = self.options.get (name) or options.get (name)
+
+        if required and opt is None:
+            raise PicError (
+                ':%s: option required in directive (or set %s_%s in conf.py).' % (name, self.name, name)
+            )
+        return opt or default
+
+
+    def get_code (self):
+        # env = self.state.document.settings.env
         args = types.SimpleNamespace ()
 
-        node['args'] = args
-        node['content'] = self.content
-        node['options'] = {}
-        node['alt'] = 'UML Database Graph'
-        if 'alt' in self.options:
-            node['alt'] = self.options['alt']
-        if 'align' in self.options:
-            node['align'] = self.options['align']
-
-        args.arguments       = self.arguments or env.config.sauml_arguments
-        args.schema          = self.options.get ('schema', None)
-        args.include         = self.options.get ('include', '').split ()
-        args.exclude         = self.options.get ('exclude', '').split ()
-        args.include_fields  = self.options.get ('include-fields', '').split ()
-        args.include_indices = self.options.get ('include-indices', False)
+        args.arguments       = self.arguments if self.arguments else self.get_opt ('arguments', [])
+        args.schema          = self.get_opt ('schema')
+        args.include         = self.get_opt ('include', '').split ()
+        args.exclude         = self.get_opt ('exclude', '').split ()
+        args.include_fields  = self.get_opt ('include-fields', '').split ()
+        args.include_indices = self.get_opt ('include-indices', False)
 
         if args.include and args.exclude:
             raise SaUmlError ('Use either :include: or :exclude:')
 
         kw = {}
-        kw['content'] = '\n'.join (node['content'])
+        kw['content'] = '\n'.join (self.content)
         for attr in sagraph.DOT_ATTRS:
-            kw[attr]  = urllib.parse.parse_qsl (getattr (env.config, 'sauml_dot_' + attr, ''))
-            kw[attr] += urllib.parse.parse_qsl (self.options.get ('dot-' + attr, ''))
+            kw[attr] = self.get_opt ('dot-' + attr, {}, parse = True)
 
         args.urls = []
         args.modules = []
@@ -191,21 +179,20 @@ class SaUmlDirective (graphviz.Graphviz):
             else:
                 data = sagraph.inspect_modules (args)
 
-            node['code'] = sagraph.format_as_dot (data, args, **kw)
+            return sagraph.format_as_dot (data, args, **kw)
 
-        except Exception:
-            traceback.print_exc ()
-            sys.stderr.write (kw['content'])
-            raise nodes.SkipNode
-
-        caption = self.options.get ('caption')
-        if caption:
-            node = graphviz.figure_wrapper (self, node, caption)
-
-        self.add_name (node)
-        return [node]
+        except Exception as e:
+            raise SaUmlError ('Cannot open database: %s (%s)' % self.arguments, e)
 
 
-def html_visit_graphviz (self, node):
-    # type: (nodes.NodeVisitor, graphviz) -> None
-    graphviz.render_dot_html (self, node, node['code'], node['options'], imgcls='sauml')
+def setup (app):
+    # type: (Sphinx) -> Dict[unicode, Any]
+
+    app.add_config_value (NAME + '_options', {}, 'env')
+
+    for attr in sagraph.DOT_ATTRS:
+        app.add_config_value (NAME + '_dot_' + attr, '', False)
+
+    app.add_directive (NAME, SaUmlDirective)
+
+    return {'version': __version__, 'parallel_read_safe': True}
