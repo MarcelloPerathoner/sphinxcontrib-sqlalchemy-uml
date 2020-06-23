@@ -29,7 +29,11 @@
     be set (as list) in the conf.py directive: sauml_option['arguments']::
 
         sauml_options = {
-            'arguments' : ['postgresql+psycopg2://user@localhost:5432/database', 'url2', ...],
+            'arguments' : [
+                'postgresql+psycopg2://user@localhost:5432/database',
+                'url2',
+                ...
+            ],
         }
 
     :param string include: Whitespace-separated list of tables to include.  Use
@@ -65,7 +69,7 @@
           'dot_table' : { 'bgcolor' : '#e7f2fa', 'color' : '#2980B9' },
        }
 
-    :copyright: Copyright 2019 by Marcello Perathoner <marcello@perathoner.de>
+    :copyright: Copyright 2019-20 by Marcello Perathoner <marcello@perathoner.de>
     :license: BSD, see LICENSE for details.
 
 """
@@ -183,6 +187,14 @@ class SaUmlDirective (pic.PicDirective):
 
         except Exception as e:
             raise SaUmlError ('Cannot open database: %s (%s)' % self.arguments, e)
+
+
+    def run (self):
+        """ Turn the directive into nodes. """
+
+        self.options['language'] = 'dot'
+        return self._run ()
+
 
 
 def setup (app):
